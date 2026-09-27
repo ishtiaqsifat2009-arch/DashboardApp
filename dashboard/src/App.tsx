@@ -7,6 +7,7 @@ import {
   type StudyNote,
   type StudyTask,
 } from "./studyData"
+import studySpaceIcon from "./assets/StudySpaceIcon.jpg"
 import "./App.css"
 
 type Page = "overview" | "tasks" | "timer" | "plan" | "notes"
@@ -430,7 +431,7 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="#overview" onClick={(event) => { event.preventDefault(); setActivePage("overview") }} aria-label="Studyspace home">
-          <span className="brand-mark">S</span><span>studyspace</span>
+          <img className="brand-mark" src={studySpaceIcon} alt="" /><span>studyspace</span>
         </a>
         <div className="nav-label">WORKSPACE</div>
         <nav className="navigation" aria-label="Main navigation">
