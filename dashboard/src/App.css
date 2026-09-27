@@ -182,3 +182,28 @@
     border-right-color: var(--border);
   }
 }
+*{
+  box-sizing: border-box;
+}
+body{
+  margin: 0;
+  font-family: var(--body);
+  color: var(--text);
+  background-color: var(--bg);
+}
+
+.app{
+  min-height: 100svh;
+  display: flex;
+}
+
+.sidebar {
+  width: 240px;
+  padding: 24px;
+  border-right: 1px solid #333;
+}
+
+.main {
+  flex: 1;
+  padding: 32px;
+}

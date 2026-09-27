@@ -1,26 +1,21 @@
+import "./App.css"
+
 function App() {
   return (
-    <div>
-      <aside>
-        <h2>My Dashboard</h2>
+    <div className="app">
+      <aside className="sidebar">
+        <h2>Dashboard</h2>
 
-        <p>Dashboard</p>
-        <p>Tasks</p>
-        <p>Projects</p>
-        <p>Settings</p>
+        <nav>
+          <p>Home</p>
+          <p>Tasks</p>
+          <p>Projects</p>
+          <p>Settings</p>
+        </nav>
       </aside>
 
-      <main>
+      <main className="main">
         <h1>Good evening</h1>
-        <p>Here's what you have today.</p>
-
-        <section>
-          <h2>Today's Tasks</h2>
-
-          <p>□ Finish physics homework</p>
-          <p>□ Code dashboard</p>
-          <p>✓ Practice basketball</p>
-        </section>
       </main>
     </div>
   )
