@@ -1,5 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react"
-import { supabase } from "./supabaseClient"
+import { useEffect, useReducer, useState } from "react"
 
 export type StudyTask = {
   id: string
@@ -53,18 +52,7 @@ export type StudyData = {
 }
 
 const STORAGE_KEY = "studyspace:data:v1"
-
-function getStorageKey(userId?: string) {
-  return `${STORAGE_KEY}:${userId ?? "local"}`
-}
-
-function hasStoredData(userId?: string) {
-  try {
-    return window.localStorage.getItem(getStorageKey(userId)) !== null
-  } catch {
-    return false
-  }
-}
+const LOCAL_STORAGE_KEY = `${STORAGE_KEY}:local`
 
 export function getLocalDate(date = new Date()) {
   const year = date.getFullYear()
@@ -112,21 +100,23 @@ function normalizeStudyData(value: unknown, fallback: StudyData): StudyData {
   }
 }
 
-function getCloudSignature(data: StudyData) {
-  const timer = data.timer.isRunning
-    ? { ...data.timer, remainingSeconds: 0 }
-    : data.timer
-  return JSON.stringify({ ...data, timer })
+function readSingleLegacyAccountCache() {
+  const accountCachePrefix = `${STORAGE_KEY}:`
+  const accountCacheKeys = Object.keys(window.localStorage)
+    .filter((key) => key.startsWith(accountCachePrefix) && key !== LOCAL_STORAGE_KEY)
+
+  return accountCacheKeys.length === 1
+    ? window.localStorage.getItem(accountCacheKeys[0])
+    : null
 }
 
-function loadStudyData(userId?: string): StudyData {
+function loadStudyData(): StudyData {
   const initial = createInitialData()
   try {
-    const key = getStorageKey(userId)
-    let saved = window.localStorage.getItem(key)
-    if (!saved && !userId) {
-      saved = window.localStorage.getItem(STORAGE_KEY)
-      if (saved) window.localStorage.setItem(key, saved)
+    let saved = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (!saved) {
+      saved = readSingleLegacyAccountCache() ?? window.localStorage.getItem(STORAGE_KEY)
+      if (saved) window.localStorage.setItem(LOCAL_STORAGE_KEY, saved)
     }
     if (!saved) return initial
     return normalizeStudyData(JSON.parse(saved), initial)
@@ -136,7 +126,6 @@ function loadStudyData(userId?: string): StudyData {
 }
 
 type Action =
-  | { type: "hydrate"; data: StudyData }
   | { type: "task/add"; task: StudyTask }
   | { type: "task/toggle"; id: string }
   | { type: "task/delete"; id: string }
@@ -166,8 +155,6 @@ function addLog(data: StudyData, now: number, endAt: number) {
 
 function reducer(data: StudyData, action: Action): StudyData {
   switch (action.type) {
-    case "hydrate":
-      return action.data
     case "task/add":
       return { ...data, tasks: [action.task, ...data.tasks] }
     case "task/toggle":
@@ -262,141 +249,20 @@ function reducer(data: StudyData, action: Action): StudyData {
   }
 }
 
-export function useStudyData(userId?: string) {
-  const [data, dispatch] = useReducer(reducer, userId, loadStudyData)
+export function useStudyData() {
+  const [data, dispatch] = useReducer(reducer, undefined, loadStudyData)
   const [storageError, setStorageError] = useState(false)
-  const [syncReadyUserId, setSyncReadyUserId] = useState<string | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
-  const [syncRevision, setSyncRevision] = useState(0)
-  const [cloudRetry, setCloudRetry] = useState(0)
-  const [hadUserCache] = useState(() => userId ? hasStoredData(userId) : false)
-  const dataRef = useRef(data)
-  const lastCloudSignature = useRef("")
-
-  useEffect(() => {
-    dataRef.current = data
-  }, [data])
 
   useEffect(() => {
     let failedToSave = false
     try {
-      window.localStorage.setItem(getStorageKey(userId), JSON.stringify(data))
+      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
     } catch {
       failedToSave = true
     }
     const timeout = window.setTimeout(() => setStorageError(failedToSave), 0)
     return () => window.clearTimeout(timeout)
-  }, [data, userId])
-
-  useEffect(() => {
-    if (!supabase || !userId) return
-
-    let active = true
-    void (async () => {
-      const { data: row, error } = await supabase
-        .from("study_data")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle()
-
-      if (!active) return
-      if (error) {
-        setSyncError(error.message)
-        return
-      }
-
-      const nextData = row?.data
-        ? normalizeStudyData(row.data, dataRef.current)
-        : hadUserCache
-          ? dataRef.current
-          : loadStudyData()
-      if (row?.data || !hadUserCache) {
-        dataRef.current = nextData
-        dispatch({ type: "hydrate", data: nextData })
-      }
-
-      const { error: saveError } = await supabase
-        .from("study_data")
-        .upsert({ user_id: userId, data: nextData }, { onConflict: "user_id" })
-
-      if (!active) return
-      if (saveError) {
-        setSyncError(saveError.message)
-        return
-      }
-
-      lastCloudSignature.current = getCloudSignature(nextData)
-      setSyncReadyUserId(userId)
-      setSyncError(null)
-    })().catch((error: unknown) => {
-      if (active) setSyncError(error instanceof Error ? error.message : "Cloud sync failed.")
-    })
-
-    return () => {
-      active = false
-    }
-  }, [hadUserCache, userId, syncRevision])
-
-  useEffect(() => {
-    const client = supabase
-    if (!client || !userId || syncReadyUserId !== userId) return
-    const signature = getCloudSignature(data)
-    if (signature === lastCloudSignature.current) return
-
-    let active = true
-    const timeout = window.setTimeout(() => {
-      void (async () => {
-        const { error } = await client
-          .from("study_data")
-          .upsert({ user_id: userId, data }, { onConflict: "user_id" })
-
-        if (!active) return
-        if (error) setSyncError(error.message)
-        else {
-          lastCloudSignature.current = signature
-          setSyncError(null)
-        }
-      })()
-    }, 350)
-
-    return () => {
-      active = false
-      window.clearTimeout(timeout)
-    }
-  }, [data, userId, syncReadyUserId, cloudRetry])
-
-  useEffect(() => {
-    const client = supabase
-    if (!client || !userId || syncReadyUserId !== userId) return
-
-    const channel = client
-      .channel(`study-data-${userId}`)
-      .on("postgres_changes", {
-        event: "UPDATE",
-        schema: "public",
-        table: "study_data",
-        filter: `user_id=eq.${userId}`,
-      }, (payload) => {
-        const incoming = normalizeStudyData(
-          (payload.new as { data?: unknown }).data,
-          dataRef.current,
-        )
-        lastCloudSignature.current = getCloudSignature(incoming)
-        if (JSON.stringify(incoming) !== JSON.stringify(dataRef.current)) {
-          dataRef.current = incoming
-          dispatch({ type: "hydrate", data: incoming })
-        }
-      })
-      .subscribe((status, error) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setSyncError(error?.message ?? "Realtime sync is unavailable.")
-        }
-      })
-
-    return () => {
-      void client.removeChannel(channel)
-    }
-  }, [userId, syncReadyUserId])
+  }, [data])
 
   useEffect(() => {
     if (!data.timer.isRunning) return
@@ -420,23 +286,5 @@ export function useStudyData(userId?: string) {
     resetTimer: () => dispatch({ type: "timer/reset", now: Date.now() }),
   }
 
-  const syncStatus = !supabase || !userId
-    ? "local"
-    : syncError
-      ? "error"
-      : syncReadyUserId === userId
-        ? "synced"
-        : "loading"
-
-  return {
-    data,
-    actions,
-    storageError,
-    syncError,
-    syncStatus,
-    retrySync: () => {
-      if (userId && syncReadyUserId === userId) setCloudRetry((retry) => retry + 1)
-      else setSyncRevision((revision) => revision + 1)
-    },
-  }
+  return { data, actions, storageError }
 }

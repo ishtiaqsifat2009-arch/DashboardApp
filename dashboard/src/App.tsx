@@ -7,8 +7,6 @@ import {
   type StudyNote,
   type StudyTask,
 } from "./studyData"
-import { useAuth } from "./useAuth"
-import { supabaseConfigured, supabaseConfigurationError } from "./supabaseClient"
 import "./App.css"
 
 type Page = "overview" | "tasks" | "timer" | "plan" | "notes"
@@ -418,53 +416,9 @@ function StudyPlanPage({ plan, onAdd, onDelete, onStart }: {
   )
 }
 
-function AuthScreen({ auth }: { auth: ReturnType<typeof useAuth> }) {
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void auth.submitCredentials(email.trim(), password, mode)
-  }
-
-  return (
-    <main className="auth-shell">
-      <section className="auth-panel">
-        <a className="brand auth-brand" href="#home">
-          <span className="brand-mark">S</span><span>studyspace</span>
-        </a>
-        <div className="eyebrow"><span className="status-dot" /> YOUR STUDY SPACE</div>
-        <h1>{mode === "sign-in" ? "Welcome back" : "Create your account"}</h1>
-        <p className="page-subtitle">{mode === "sign-in" ? "Sign in to pick up where you left off." : "Your study data will sync across your devices."}</p>
-
-        <form className="data-form auth-form" onSubmit={submit}>
-          <label className="field"><span>Email</span><input autoComplete="email" autoFocus inputMode="email" onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required type="email" value={email} /></label>
-          <label className="field"><span>Password</span><input autoComplete={mode === "sign-in" ? "current-password" : "new-password"} minLength={8} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" required type="password" value={password} /></label>
-          {auth.error && <p className="auth-error" role="alert">{auth.error}</p>}
-          {auth.message && <p className="auth-message" role="status">{auth.message}</p>}
-          <button className="primary-button auth-submit" disabled={auth.isSubmitting} type="submit">{auth.isSubmitting ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}</button>
-        </form>
-
-        <p className="auth-switch">{mode === "sign-in" ? "New to Studyspace?" : "Already have an account?"} <button onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")} type="button">{mode === "sign-in" ? "Create an account" : "Sign in"}</button></p>
-      </section>
-    </main>
-  )
-}
-
-function AppLoading() {
-  return <main className="auth-shell"><div className="loading-state" role="status"><span className="status-dot" /> Checking your account…</div></main>
-}
-
-function Workspace({ user, onSignOut, isSigningOut }: {
-  user: ReturnType<typeof useAuth>["user"]
-  onSignOut: () => void
-  isSigningOut: boolean
-}) {
-  const { data, actions, storageError, syncError, syncStatus, retrySync } = useStudyData(user?.id)
+function App() {
+  const { data, actions, storageError } = useStudyData()
   const [activePage, setActivePage] = useState<Page>("overview")
-
-  if (syncStatus === "loading") return <AppLoading />
 
   function startPlannedSession(item: PlannedSession) {
     actions.configureTimer(item.subject, item.title, item.durationMinutes)
@@ -482,13 +436,11 @@ function Workspace({ user, onSignOut, isSigningOut }: {
         <nav className="navigation" aria-label="Main navigation">
           {navigation.map((item) => <button className={`nav-item${activePage === item.page ? " is-active" : ""}`} key={item.page} onClick={() => setActivePage(item.page)} type="button" aria-current={activePage === item.page ? "page" : undefined}><Icon name={item.icon} /><span>{item.label}</span></button>)}
         </nav>
-        <div className="sidebar-bottom"><div className="streak-mark">S</div><div className="sidebar-account"><strong>{user?.email ?? `${data.tasks.length} tasks`}</strong><span>{user ? syncStatus === "synced" ? "Cloud sync ready" : "Cloud sync needs attention" : `${data.notes.length} notes saved locally`}</span></div>{user && <button className="account-button" disabled={isSigningOut} onClick={onSignOut} type="button">{isSigningOut ? "…" : "Sign out"}</button>}</div>
+        <div className="sidebar-bottom"><div className="streak-mark">S</div><div><strong>{data.tasks.length} tasks</strong><span>{data.notes.length} notes saved locally</span></div></div>
       </aside>
 
       <main className="main-content" id="overview">
         {storageError && <div className="storage-warning" role="alert">Browser storage is unavailable. This device cannot keep an offline copy of your data.</div>}
-        {syncError && <div className="storage-warning" role="alert">Cloud sync needs attention: {syncError} <button className="quiet-button" onClick={retrySync} type="button">Retry</button></div>}
-        {supabaseConfigurationError && <div className="storage-warning" role="alert">Cloud setup is incomplete. Set both Supabase environment variables to enable accounts; local saving is still active.</div>}
         {activePage === "overview" && <Overview data={data} actions={actions} onNavigate={setActivePage} />}
         {activePage === "tasks" && <TasksPage tasks={data.tasks} onAdd={actions.addTask} onToggle={actions.toggleTask} onDelete={actions.deleteTask} />}
         {activePage === "timer" && <TimerPage timer={data.timer} onConfigure={actions.configureTimer} onStart={actions.startTimer} onPause={actions.pauseTimer} onReset={actions.resetTimer} />}
@@ -497,15 +449,6 @@ function Workspace({ user, onSignOut, isSigningOut }: {
       </main>
     </div>
   )
-}
-
-function App() {
-  const auth = useAuth()
-
-  if (auth.isLoading) return <AppLoading />
-  if (supabaseConfigured && !auth.user) return <AuthScreen auth={auth} />
-
-  return <Workspace key={auth.user?.id ?? "local"} user={auth.user} onSignOut={() => void auth.signOut()} isSigningOut={auth.isSubmitting} />
 }
 
 export default App
