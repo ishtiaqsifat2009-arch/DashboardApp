@@ -34,13 +34,12 @@ On Apple Silicon, the production build creates:
 - `src-tauri/target/release/bundle/macos/Studyspace.app`
 - `src-tauri/target/release/bundle/dmg/Studyspace_0.1.0_aarch64.dmg`
 
-## Windows downloads
+## Desktop downloads
 
-Pushing to `main` runs the Windows desktop workflow. When it finishes, download the `Studyspace-Windows-Installers` artifact from that GitHub Actions run. Pushing a version tag such as `v0.1.0` also attaches the `.msi` and `.exe` installers to a GitHub Release. The Windows installers are currently unsigned, so Windows SmartScreen may show its standard warning.
+Pushing to `main` builds Windows and macOS installers. Download the `Studyspace-Windows-Installers` and `Studyspace-macOS-Installer` artifacts from that GitHub Actions run. Pushing a version tag such as `v0.1.0` builds both platforms and attaches the `.exe`, `.msi`, and `.dmg` files to one GitHub Release. The installers are currently unsigned, so Windows SmartScreen or macOS Gatekeeper may show their standard warnings.
 
 ## Data model and desktop path
 
-The React UI uses the study-data hook; `studyData.ts` owns the typed entities and reducer logic; `storage.ts` implements the `StudyDataStorage` boundary. The current adapter stores one serialized `StudyData` document in localStorage and contains the legacy-key migrations and storage-error handling. The entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, and `FocusTimer`) already have stable IDs and SQLite-friendly primitive fields. When adding Tauri and SQLite, replace the adapter with a SQLite implementation and handle its asynchronous startup/save calls inside the study-data layer, without changing UI workflows.
+The React UI uses the study-data hook; `studyData.ts` owns the typed entities and reducer logic; `storage.ts` implements the `StudyDataStorage` boundary. The current adapter stores one serialized `StudyData` document in localStorage and contains the legacy-key migrations and storage-error handling. The entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, and `FocusTimer`) already have stable IDs and SQLite-friendly primitive fields. When adding SQLite, replace the adapter with a SQLite implementation and handle its asynchronous startup/save calls inside the study-data layer, without changing UI workflows.
 
 SQLite is not included yet. It does not require Supabase or a custom server.
-```
