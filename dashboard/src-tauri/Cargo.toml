@@ -1,6 +1,6 @@
 [package]
 name = "studyspace"
-version = "0.1.0"
+version = "0.1.1"
 description = "Studyspace desktop study app"
 authors = []
 license = ""

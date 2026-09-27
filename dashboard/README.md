@@ -36,7 +36,7 @@ On Apple Silicon, the production build creates:
 
 ## Desktop downloads
 
-Pushing to `main` builds Windows and macOS installers. Download the `Studyspace-Windows-Installers` and `Studyspace-macOS-Installer` artifacts from that GitHub Actions run. Pushing a version tag such as `v0.1.0` builds both platforms and attaches the `.exe`, `.msi`, and `.dmg` files to one GitHub Release. The installers are currently unsigned, so Windows SmartScreen or macOS Gatekeeper may show their standard warnings.
+Pushing to `main` builds Windows and macOS installers. Download the `Studyspace-Windows-Installers` and `Studyspace-macOS-Installer` artifacts from that GitHub Actions run. Pushing a version tag such as `v0.1.1` builds both platforms and attaches the `.exe`, `.msi`, and `.dmg` files to one GitHub Release. The installers are currently unsigned, so Windows SmartScreen or macOS Gatekeeper may show their standard warnings.
 
 ## Data model and desktop path
 
