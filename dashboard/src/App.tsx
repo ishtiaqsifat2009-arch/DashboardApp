@@ -7,6 +7,8 @@ import {
   type StudyNote,
   type StudyTask,
 } from "./studyData"
+import { useAuth } from "./useAuth"
+import { supabaseConfigured, supabaseConfigurationError } from "./supabaseClient"
 import "./App.css"
 
 type Page = "overview" | "tasks" | "timer" | "plan" | "notes"
@@ -35,9 +37,11 @@ function Icon({ name }: { name: IconName }) {
 }
 
 function formatDuration(seconds: number) {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  if (hours === 0) return `${minutes} min`
+  const totalSeconds = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const remainder = totalSeconds % 60
+  if (hours === 0) return `${minutes}m ${remainder}s`
   return `${hours}h ${minutes}m`
 }
 
@@ -50,6 +54,10 @@ function formatTimer(seconds: number) {
 function formatDate(dateString: string, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) {
   const date = new Date(`${dateString.slice(0, 10)}T00:00:00`)
   return date.toLocaleDateString(undefined, options)
+}
+
+function confirmDelete(label: string) {
+  return window.confirm(`Delete "${label}"? This cannot be undone.`)
 }
 
 function createDefaultPlanTime() {
@@ -138,7 +146,7 @@ function TaskRows({ tasks, onToggle, onDelete, emptyText }: {
             <strong>{task.title}</strong>
             <span>{task.subject} <i /> Due {formatDate(task.dueDate, { month: "short", day: "numeric", year: "numeric" })}</span>
           </span>
-          {onDelete && <button className="quiet-button danger-button" type="button" onClick={() => onDelete(task.id)} aria-label={`Delete ${task.title}`}>Delete</button>}
+          {onDelete && <button className="quiet-button danger-button" type="button" onClick={() => { if (confirmDelete(task.title)) onDelete(task.id) }} aria-label={`Delete ${task.title}`}>Delete</button>}
         </li>
       ))}
     </ul>
@@ -204,7 +212,7 @@ function Overview({ data, actions, onNavigate }: {
         </article>
 
         <article className="panel activity-panel">
-          <div className="panel-heading"><div><span className="section-kicker">BUILT FROM YOUR SESSIONS</span><h2>This week's focus</h2></div><span className="activity-total">{(studySeconds / 3600).toFixed(1)} <span>hrs</span></span></div>
+          <div className="panel-heading"><div><span className="section-kicker">BUILT FROM YOUR SESSIONS</span><h2>This week's focus</h2></div><span className="activity-total">{formatDuration(studySeconds)}</span></div>
           <div className="chart" role="img" aria-label="Study activity by day this week">
             {activity.map((day) => <div className={`chart-column${day.isToday ? " is-today" : ""}`} key={day.key}><div className="chart-bar-wrap"><span className="chart-bar" style={{ height: `${day.amount}%` }} /></div><span className="chart-day">{day.label}</span></div>)}
           </div>
@@ -292,7 +300,7 @@ function TimerPage({ timer, onConfigure, onStart, onPause, onReset }: {
           <div className="progress-track timer-progress" role="progressbar" aria-label="Focus timer progress" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div>
           <div className="timer-controls">
             <button className="primary-button timer-main-button" disabled={timer.remainingSeconds === 0 && !timer.isRunning} onClick={timer.isRunning ? onPause : onStart} type="button">{timer.isRunning ? "Pause" : timer.remainingSeconds < timer.durationMinutes * 60 ? "Resume" : "Start focus session"}</button>
-            <button className="quiet-button" onClick={onReset} type="button">Reset</button>
+            <button className="quiet-button" onClick={() => { if (!timer.isRunning || window.confirm("Reset this session? Elapsed study time will be kept.")) onReset() }} type="button">Reset</button>
           </div>
           <p className="timer-persistence"><span className="status-dot" /> Your timer is saved on this device and continues if you change sections.</p>
         </section>
@@ -358,7 +366,7 @@ function NotesPage({ notes, onSave, onDelete }: {
         </section>
         <section className="panel list-panel">
           <div className="panel-heading"><div><span className="section-kicker">YOUR COLLECTION</span><h2>Saved notes <span className="inline-count">{notes.length}</span></h2></div></div>
-          {notes.length === 0 ? <p className="empty-state">Your notes will live here. Start with something you want to remember.</p> : <div className="record-list">{[...notes].sort((left, right) => right.updatedAt - left.updatedAt).map((note) => <article className="record-card note-card" key={note.id}><div className="record-topline"><span className="record-subject">{note.subject}</span><time>{new Date(note.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></div><h3>{note.title}</h3><p>{note.content}</p><div className="record-actions"><button className="quiet-button" onClick={() => editNote(note)} type="button">Edit</button><button className="quiet-button danger-button" onClick={() => onDelete(note.id)} type="button">Delete</button></div></article>)}</div>}
+          {notes.length === 0 ? <p className="empty-state">Your notes will live here. Start with something you want to remember.</p> : <div className="record-list">{[...notes].sort((left, right) => right.updatedAt - left.updatedAt).map((note) => <article className="record-card note-card" key={note.id}><div className="record-topline"><span className="record-subject">{note.subject}</span><time>{new Date(note.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></div><h3>{note.title}</h3><p>{note.content}</p><div className="record-actions"><button className="quiet-button" onClick={() => editNote(note)} type="button">Edit</button><button className="quiet-button danger-button" onClick={() => { if (confirmDelete(note.title)) onDelete(note.id) }} type="button">Delete</button></div></article>)}</div>}
         </section>
       </div>
     </>
@@ -403,16 +411,60 @@ function StudyPlanPage({ plan, onAdd, onDelete, onStart }: {
         </section>
         <section className="panel list-panel">
           <div className="panel-heading"><div><span className="section-kicker">UPCOMING</span><h2>Planned sessions <span className="inline-count">{plan.length}</span></h2></div></div>
-          {sortedPlan.length === 0 ? <p className="empty-state">Your schedule is clear. Add a session to plan your next study block.</p> : <div className="record-list">{sortedPlan.map((item) => <article className="record-card plan-card" key={item.id}><div className="record-topline"><span className="record-subject">{item.subject}</span><time>{new Date(item.startsAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} <i /> {item.durationMinutes} min</p><div className="record-actions"><button className="quiet-button accent-button" onClick={() => onStart(item)} type="button">Start session</button><button className="quiet-button danger-button" onClick={() => onDelete(item.id)} type="button">Remove</button></div></article>)}</div>}
+          {sortedPlan.length === 0 ? <p className="empty-state">Your schedule is clear. Add a session to plan your next study block.</p> : <div className="record-list">{sortedPlan.map((item) => <article className="record-card plan-card" key={item.id}><div className="record-topline"><span className="record-subject">{item.subject}</span><time>{new Date(item.startsAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} <i /> {item.durationMinutes} min</p><div className="record-actions"><button className="quiet-button accent-button" onClick={() => onStart(item)} type="button">Start session</button><button className="quiet-button danger-button" onClick={() => { if (confirmDelete(item.title)) onDelete(item.id) }} type="button">Remove</button></div></article>)}</div>}
         </section>
       </div>
     </>
   )
 }
 
-function App() {
-  const { data, actions } = useStudyData()
+function AuthScreen({ auth }: { auth: ReturnType<typeof useAuth> }) {
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void auth.submitCredentials(email.trim(), password, mode)
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <a className="brand auth-brand" href="#home">
+          <span className="brand-mark">S</span><span>studyspace</span>
+        </a>
+        <div className="eyebrow"><span className="status-dot" /> YOUR STUDY SPACE</div>
+        <h1>{mode === "sign-in" ? "Welcome back" : "Create your account"}</h1>
+        <p className="page-subtitle">{mode === "sign-in" ? "Sign in to pick up where you left off." : "Your study data will sync across your devices."}</p>
+
+        <form className="data-form auth-form" onSubmit={submit}>
+          <label className="field"><span>Email</span><input autoComplete="email" autoFocus inputMode="email" onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required type="email" value={email} /></label>
+          <label className="field"><span>Password</span><input autoComplete={mode === "sign-in" ? "current-password" : "new-password"} minLength={8} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" required type="password" value={password} /></label>
+          {auth.error && <p className="auth-error" role="alert">{auth.error}</p>}
+          {auth.message && <p className="auth-message" role="status">{auth.message}</p>}
+          <button className="primary-button auth-submit" disabled={auth.isSubmitting} type="submit">{auth.isSubmitting ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}</button>
+        </form>
+
+        <p className="auth-switch">{mode === "sign-in" ? "New to Studyspace?" : "Already have an account?"} <button onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")} type="button">{mode === "sign-in" ? "Create an account" : "Sign in"}</button></p>
+      </section>
+    </main>
+  )
+}
+
+function AppLoading() {
+  return <main className="auth-shell"><div className="loading-state" role="status"><span className="status-dot" /> Checking your account…</div></main>
+}
+
+function Workspace({ user, onSignOut, isSigningOut }: {
+  user: ReturnType<typeof useAuth>["user"]
+  onSignOut: () => void
+  isSigningOut: boolean
+}) {
+  const { data, actions, storageError, syncError, syncStatus, retrySync } = useStudyData(user?.id)
   const [activePage, setActivePage] = useState<Page>("overview")
+
+  if (syncStatus === "loading") return <AppLoading />
 
   function startPlannedSession(item: PlannedSession) {
     actions.configureTimer(item.subject, item.title, item.durationMinutes)
@@ -430,10 +482,13 @@ function App() {
         <nav className="navigation" aria-label="Main navigation">
           {navigation.map((item) => <button className={`nav-item${activePage === item.page ? " is-active" : ""}`} key={item.page} onClick={() => setActivePage(item.page)} type="button" aria-current={activePage === item.page ? "page" : undefined}><Icon name={item.icon} /><span>{item.label}</span></button>)}
         </nav>
-        <div className="sidebar-bottom"><div className="streak-mark">S</div><div><strong>{data.tasks.length} tasks</strong><span>{data.notes.length} notes saved locally</span></div></div>
+        <div className="sidebar-bottom"><div className="streak-mark">S</div><div className="sidebar-account"><strong>{user?.email ?? `${data.tasks.length} tasks`}</strong><span>{user ? syncStatus === "synced" ? "Cloud sync ready" : "Cloud sync needs attention" : `${data.notes.length} notes saved locally`}</span></div>{user && <button className="account-button" disabled={isSigningOut} onClick={onSignOut} type="button">{isSigningOut ? "…" : "Sign out"}</button>}</div>
       </aside>
 
       <main className="main-content" id="overview">
+        {storageError && <div className="storage-warning" role="alert">Browser storage is unavailable. This device cannot keep an offline copy of your data.</div>}
+        {syncError && <div className="storage-warning" role="alert">Cloud sync needs attention: {syncError} <button className="quiet-button" onClick={retrySync} type="button">Retry</button></div>}
+        {supabaseConfigurationError && <div className="storage-warning" role="alert">Cloud setup is incomplete. Set both Supabase environment variables to enable accounts; local saving is still active.</div>}
         {activePage === "overview" && <Overview data={data} actions={actions} onNavigate={setActivePage} />}
         {activePage === "tasks" && <TasksPage tasks={data.tasks} onAdd={actions.addTask} onToggle={actions.toggleTask} onDelete={actions.deleteTask} />}
         {activePage === "timer" && <TimerPage timer={data.timer} onConfigure={actions.configureTimer} onStart={actions.startTimer} onPause={actions.pauseTimer} onReset={actions.resetTimer} />}
@@ -442,6 +497,15 @@ function App() {
       </main>
     </div>
   )
+}
+
+function App() {
+  const auth = useAuth()
+
+  if (auth.isLoading) return <AppLoading />
+  if (supabaseConfigured && !auth.user) return <AuthScreen auth={auth} />
+
+  return <Workspace key={auth.user?.id ?? "local"} user={auth.user} onSignOut={() => void auth.signOut()} isSigningOut={auth.isSubmitting} />
 }
 
 export default App
