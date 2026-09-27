@@ -1,4 +1,5 @@
-import { useEffect, useReducer, useState } from "react"
+import { useEffect, useReducer, useRef, useState } from "react"
+import { localStudyStorage } from "./storage"
 
 export type StudyTask = {
   id: string
@@ -51,9 +52,6 @@ export type StudyData = {
   timer: FocusTimer
 }
 
-const STORAGE_KEY = "studyspace:data:v1"
-const LOCAL_STORAGE_KEY = `${STORAGE_KEY}:local`
-
 export function getLocalDate(date = new Date()) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -85,43 +83,6 @@ function createInitialData(): StudyData {
       endsAt: null,
       segmentStartedAt: null,
     },
-  }
-}
-
-function normalizeStudyData(value: unknown, fallback: StudyData): StudyData {
-  if (value === null || typeof value !== "object") return fallback
-  const parsed = value as Partial<StudyData>
-  return {
-    tasks: Array.isArray(parsed.tasks) ? parsed.tasks : fallback.tasks,
-    notes: Array.isArray(parsed.notes) ? parsed.notes : fallback.notes,
-    plan: Array.isArray(parsed.plan) ? parsed.plan : fallback.plan,
-    logs: Array.isArray(parsed.logs) ? parsed.logs : fallback.logs,
-    timer: parsed.timer ? { ...fallback.timer, ...parsed.timer } : fallback.timer,
-  }
-}
-
-function readSingleLegacyAccountCache() {
-  const accountCachePrefix = `${STORAGE_KEY}:`
-  const accountCacheKeys = Object.keys(window.localStorage)
-    .filter((key) => key.startsWith(accountCachePrefix) && key !== LOCAL_STORAGE_KEY)
-
-  return accountCacheKeys.length === 1
-    ? window.localStorage.getItem(accountCacheKeys[0])
-    : null
-}
-
-function loadStudyData(): StudyData {
-  const initial = createInitialData()
-  try {
-    let saved = window.localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (!saved) {
-      saved = readSingleLegacyAccountCache() ?? window.localStorage.getItem(STORAGE_KEY)
-      if (saved) window.localStorage.setItem(LOCAL_STORAGE_KEY, saved)
-    }
-    if (!saved) return initial
-    return normalizeStudyData(JSON.parse(saved), initial)
-  } catch {
-    return initial
   }
 }
 
@@ -250,13 +211,18 @@ function reducer(data: StudyData, action: Action): StudyData {
 }
 
 export function useStudyData() {
-  const [data, dispatch] = useReducer(reducer, undefined, loadStudyData)
-  const [storageError, setStorageError] = useState(false)
+  const [initialLoad] = useState(() => localStudyStorage.load(createInitialData()))
+  const [data, dispatch] = useReducer(reducer, initialLoad.data)
+  const [storageError, setStorageError] = useState(initialLoad.storageError)
+  const lastSavedData = useRef(initialLoad.data)
 
   useEffect(() => {
+    if (data === lastSavedData.current) return
+
     let failedToSave = false
     try {
-      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
+      localStudyStorage.save(data)
+      lastSavedData.current = data
     } catch {
       failedToSave = true
     }

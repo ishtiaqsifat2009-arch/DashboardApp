@@ -20,7 +20,7 @@ npm run build
 
 ## Data model and desktop path
 
-The app keeps typed study entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, and `FocusTimer`) in a single reducer-owned `StudyData` model. Today the complete model is serialized to localStorage. The entities already have stable IDs and SQLite-friendly primitive fields; when adding Tauri and SQLite, replace the persistence adapter and store each collection in its own table rather than changing the UI workflows.
+The React UI uses the study-data hook; `studyData.ts` owns the typed entities and reducer logic; `storage.ts` implements the `StudyDataStorage` boundary. The current adapter stores one serialized `StudyData` document in localStorage and contains the legacy-key migrations and storage-error handling. The entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, and `FocusTimer`) already have stable IDs and SQLite-friendly primitive fields. When adding Tauri and SQLite, replace the adapter with a SQLite implementation and handle its asynchronous startup/save calls inside the study-data layer, without changing UI workflows.
 
 This project does not include Tauri or SQLite yet. It does not require Supabase or a custom server.
 ```
