@@ -1,3 +1,4 @@
+import { check } from "@tauri-apps/plugin-updater"
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import remarkGfm from "remark-gfm"
 import { useConfirmation } from "./confirmContext"
@@ -642,7 +643,40 @@ function StudyPlanPage({ plan, onAdd, onDelete, onStart }: {
 function App() {
   const { data, actions, storageError } = useStudyData()
   const [activePage, setActivePage] = useState<Page>("overview")
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null)
   const markdownNotes = useMarkdownNotes(data.notes, actions.clearLegacyNotes)
+
+  useEffect(() => {
+    const tauriWindow = window as Window & { __TAURI_INTERNALS__?: unknown }
+    if (!tauriWindow.__TAURI_INTERNALS__) return
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await check()
+        if (cancelled) return
+        if (!result) {
+          setUpdateMessage("Update check unavailable.")
+          return
+        }
+        if (result.available) {
+          setUpdateMessage(`Update available: ${result.version}`)
+          await result.downloadAndInstall()
+          setUpdateMessage("Update installed; relaunch to continue.")
+          return
+        }
+        setUpdateMessage("App is up to date.")
+      } catch {
+        if (!cancelled) {
+          setUpdateMessage("Update check unavailable.")
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function startPlannedSession(item: PlannedSession) {
     actions.configureTimer(item.subject, item.title, item.durationMinutes)
@@ -660,7 +694,7 @@ function App() {
         <nav className="navigation" aria-label="Main navigation">
           {navigation.map((item) => <button className={`nav-item${activePage === item.page ? " is-active" : ""}`} key={item.page} onClick={() => setActivePage(item.page)} type="button" aria-current={activePage === item.page ? "page" : undefined}><Icon name={item.icon} /><span>{item.label}</span></button>)}
         </nav>
-        <div className="sidebar-bottom"><div className="streak-mark">S</div><div><strong>{data.tasks.length} tasks</strong><span>{markdownNotes.notes.length} notes saved locally</span><small className="app-build-info">v{__STUDYSPACE_VERSION__} · {__STUDYSPACE_REVISION__}</small></div></div>
+        <div className="sidebar-bottom"><div className="streak-mark">S</div><div><strong>{data.tasks.length} tasks</strong><span>{markdownNotes.notes.length} notes saved locally</span><small className="app-build-info">v{__STUDYSPACE_VERSION__} · {__STUDYSPACE_REVISION__}</small>{updateMessage && <small className="app-build-info">{updateMessage}</small>}</div></div>
       </aside>
 
       <main className="main-content" id="overview">
