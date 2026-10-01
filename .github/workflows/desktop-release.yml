@@ -32,6 +32,10 @@ jobs:
         run: npm ci
         working-directory: dashboard
 
+      - name: Run app tests
+        run: npm test
+        working-directory: dashboard
+
       - name: Build Windows installers
         run: npm run tauri -- build --ci --bundles nsis,msi
         working-directory: dashboard
@@ -63,6 +67,10 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+        working-directory: dashboard
+
+      - name: Run app tests
+        run: npm test
         working-directory: dashboard
 
       - name: Build macOS app and disk image

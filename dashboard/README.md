@@ -1,6 +1,6 @@
 # Studyspace
 
-A local-first study workspace built with React, TypeScript, and Vite. Tasks, notes, study-plan sessions, timer settings and progress, and study history are stored on this device in browser `localStorage`. The app makes no network requests and works offline after it has loaded once.
+A local-first study workspace built with React, TypeScript, and Vite. Tasks, searchable notes, flashcard decks, study-plan sessions, timer settings and progress, and study history are stored on this device in browser `localStorage`. Notes can use a compact sticky presentation; flashcard decks can be studied in original or shuffled order. The app makes no network requests and works offline after it has loaded once.
 
 ## Run locally
 
@@ -40,6 +40,6 @@ Pushing to `main` builds Windows and macOS installers. Download the `Studyspace-
 
 ## Data model and desktop path
 
-The React UI uses the study-data hook; `studyData.ts` owns the typed entities and reducer logic; `storage.ts` implements the `StudyDataStorage` boundary. The current adapter stores one serialized `StudyData` document in localStorage and contains the legacy-key migrations and storage-error handling. The entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, and `FocusTimer`) already have stable IDs and SQLite-friendly primitive fields. When adding SQLite, replace the adapter with a SQLite implementation and handle its asynchronous startup/save calls inside the study-data layer, without changing UI workflows.
+The React UI uses the study-data hook; `studyData.ts` owns the typed entities and reducer logic; `storage.ts` implements the `StudyDataStorage` boundary. The current adapter stores one serialized `StudyData` document in localStorage and contains the legacy-key migrations and storage-error handling. The entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, `FocusTimer`, `FlashcardDeck`, and `Flashcard`) use stable IDs and local primitive data. Existing notes without a sticky presentation flag continue to load as normal notes, and older saved documents without flashcard decks default to an empty deck list. When adding SQLite, replace the adapter with a SQLite implementation and handle its asynchronous startup/save calls inside the study-data layer, without changing UI workflows.
 
 SQLite is not included yet. It does not require Supabase or a custom server.

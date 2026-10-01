@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react"
-import { localStudyStorage } from "./storage"
+import { localStudyStorage } from "./storage.ts"
 
 export type StudyTask = {
   id: string
@@ -16,6 +16,7 @@ export type StudyNote = {
   subject: string
   content: string
   updatedAt: number
+  isSticky?: boolean
 }
 
 export type PlannedSession = {
@@ -44,12 +45,26 @@ export type StudyLog = {
   durationSeconds: number
 }
 
+export type Flashcard = {
+  id: string
+  question: string
+  answer: string
+}
+
+export type FlashcardDeck = {
+  id: string
+  name: string
+  cards: Flashcard[]
+  createdAt: number
+}
+
 export type StudyData = {
   tasks: StudyTask[]
   notes: StudyNote[]
   plan: PlannedSession[]
   logs: StudyLog[]
   timer: FocusTimer
+  flashcardDecks: FlashcardDeck[]
 }
 
 export function getLocalDate(date = new Date()) {
@@ -74,6 +89,7 @@ function createInitialData(): StudyData {
     notes: [],
     plan: [],
     logs: [],
+    flashcardDecks: [],
     timer: {
       subject: "Biology",
       topic: "Cell structure & function",
@@ -86,7 +102,7 @@ function createInitialData(): StudyData {
   }
 }
 
-type Action =
+export type StudyDataAction =
   | { type: "task/add"; task: StudyTask }
   | { type: "task/toggle"; id: string }
   | { type: "task/delete"; id: string }
@@ -94,11 +110,18 @@ type Action =
   | { type: "note/delete"; id: string }
   | { type: "plan/add"; item: PlannedSession }
   | { type: "plan/delete"; id: string }
+  | { type: "log/delete"; id: string }
+  | { type: "deck/add"; deck: FlashcardDeck }
+  | { type: "deck/delete"; id: string }
+  | { type: "deck/rename"; id: string; name: string }
+  | { type: "deck/addCard"; deckId: string; card: Flashcard }
+  | { type: "deck/deleteCard"; deckId: string; cardId: string }
+  | { type: "deck/editCard"; deckId: string; card: Flashcard }
   | { type: "timer/configure"; subject: string; topic: string; durationMinutes: number; now: number }
   | { type: "timer/start"; now: number }
   | { type: "timer/pause"; now: number }
   | { type: "timer/tick"; now: number }
-  | { type: "timer/reset"; now: number }
+  | { type: "timer/reset" }
 
 function addLog(data: StudyData, now: number, endAt: number) {
   const timer = data.timer
@@ -114,7 +137,7 @@ function addLog(data: StudyData, now: number, endAt: number) {
   }]
 }
 
-function reducer(data: StudyData, action: Action): StudyData {
+export function reducer(data: StudyData, action: StudyDataAction): StudyData {
   switch (action.type) {
     case "task/add":
       return { ...data, tasks: [action.task, ...data.tasks] }
@@ -132,6 +155,20 @@ function reducer(data: StudyData, action: Action): StudyData {
       return { ...data, plan: [...data.plan, action.item].sort((a, b) => a.startsAt.localeCompare(b.startsAt)) }
     case "plan/delete":
       return { ...data, plan: data.plan.filter((item) => item.id !== action.id) }
+    case "log/delete":
+      return { ...data, logs: data.logs.filter((log) => log.id !== action.id) }
+    case "deck/add":
+      return { ...data, flashcardDecks: [...data.flashcardDecks, action.deck] }
+    case "deck/delete":
+      return { ...data, flashcardDecks: data.flashcardDecks.filter((deck) => deck.id !== action.id) }
+    case "deck/rename":
+      return { ...data, flashcardDecks: data.flashcardDecks.map((deck) => deck.id === action.id ? { ...deck, name: action.name } : deck) }
+    case "deck/addCard":
+      return { ...data, flashcardDecks: data.flashcardDecks.map((deck) => deck.id === action.deckId ? { ...deck, cards: [...deck.cards, action.card] } : deck) }
+    case "deck/deleteCard":
+      return { ...data, flashcardDecks: data.flashcardDecks.map((deck) => deck.id === action.deckId ? { ...deck, cards: deck.cards.filter((card) => card.id !== action.cardId) } : deck) }
+    case "deck/editCard":
+      return { ...data, flashcardDecks: data.flashcardDecks.map((deck) => deck.id === action.deckId ? { ...deck, cards: deck.cards.map((card) => card.id === action.card.id ? action.card : card) } : deck) }
     case "timer/configure": {
       const durationMinutes = Math.min(120, Math.max(1, action.durationMinutes))
       const logs = data.timer.isRunning
@@ -190,12 +227,8 @@ function reducer(data: StudyData, action: Action): StudyData {
       }
     }
     case "timer/reset": {
-      const logs = data.timer.isRunning
-        ? addLog(data, action.now, Math.min(action.now, data.timer.endsAt ?? action.now))
-        : data.logs
       return {
         ...data,
-        logs,
         timer: {
           ...data.timer,
           remainingSeconds: data.timer.durationMinutes * 60,
@@ -246,10 +279,21 @@ export function useStudyData() {
     deleteNote: (id: string) => dispatch({ type: "note/delete", id }),
     addPlanItem: (item: Omit<PlannedSession, "id">) => dispatch({ type: "plan/add", item: { ...item, id: createId() } }),
     deletePlanItem: (id: string) => dispatch({ type: "plan/delete", id }),
+    deleteLog: (id: string) => dispatch({ type: "log/delete", id }),
+    addDeck: (name: string) => {
+      const id = createId()
+      dispatch({ type: "deck/add", deck: { id, name, cards: [], createdAt: Date.now() } })
+      return id
+    },
+    deleteDeck: (id: string) => dispatch({ type: "deck/delete", id }),
+    renameDeck: (id: string, name: string) => dispatch({ type: "deck/rename", id, name }),
+    addCardToDeck: (deckId: string, question: string, answer: string) => dispatch({ type: "deck/addCard", deckId, card: { id: createId(), question, answer } }),
+    deleteCardFromDeck: (deckId: string, cardId: string) => dispatch({ type: "deck/deleteCard", deckId, cardId }),
+    editCardInDeck: (deckId: string, card: Flashcard) => dispatch({ type: "deck/editCard", deckId, card }),
     configureTimer: (subject: string, topic: string, durationMinutes: number) => dispatch({ type: "timer/configure", subject, topic, durationMinutes, now: Date.now() }),
     startTimer: () => dispatch({ type: "timer/start", now: Date.now() }),
     pauseTimer: () => dispatch({ type: "timer/pause", now: Date.now() }),
-    resetTimer: () => dispatch({ type: "timer/reset", now: Date.now() }),
+    resetTimer: () => dispatch({ type: "timer/reset" }),
   }
 
   return { data, actions, storageError }

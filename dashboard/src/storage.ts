@@ -34,6 +34,7 @@ function normalizeStudyData(value: unknown, fallback: StudyData): StudyData | nu
     plan: Array.isArray(parsed.plan) ? parsed.plan : fallback.plan,
     logs: Array.isArray(parsed.logs) ? parsed.logs : fallback.logs,
     timer: parsed.timer ? { ...fallback.timer, ...parsed.timer } : fallback.timer,
+    flashcardDecks: Array.isArray(parsed.flashcardDecks) ? parsed.flashcardDecks : fallback.flashcardDecks,
   }
 }
 

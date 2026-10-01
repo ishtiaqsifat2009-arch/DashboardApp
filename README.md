@@ -10,7 +10,9 @@ It is designed to be a simple, distraction-free workspace for managing schoolwor
 * **Tasks** — Create, complete, edit, and delete tasks.
 * **Focus Timer** — Run focused study sessions and keep a record of your study time.
 * **Study Plan** — Organize upcoming study sessions.
-* **Notes** — Create and edit notes alongside your tasks.
+* **Flashcards** — Create and study decks in original or shuffled order.
+* **Notes** — Search, edit, and organize notes with an optional sticky-note presentation.
+* **Session history** — Cancel active timers or remove saved focus sessions and their study time.
 * **Local-first storage** — Your data stays on your device.
 * **Offline support** — No account or network connection is required.
 * **Desktop app** — The same React application can run as a native desktop application through Tauri.
