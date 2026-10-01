@@ -1,4 +1,8 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react"
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import remarkGfm from "remark-gfm"
+import { useConfirmation } from "./confirmContext"
+import type { MarkdownNote } from "./markdownNotes"
+import { useMarkdownNotes } from "./useMarkdownNotes"
 import {
   createId,
   getLocalDate,
@@ -7,11 +11,12 @@ import {
   type FlashcardDeck,
   type StudyLog,
   type PlannedSession,
-  type StudyNote,
   type StudyTask,
 } from "./studyData"
 import studySpaceIcon from "./assets/StudySpaceIcon.jpg"
 import "./App.css"
+
+const ReactMarkdown = lazy(() => import("react-markdown"))
 
 type Page = "overview" | "tasks" | "timer" | "plan" | "notes" | "flashcards"
 type IconName = Page | "arrow" | "clock"
@@ -60,8 +65,10 @@ function formatDate(dateString: string, options: Intl.DateTimeFormatOptions = { 
   return date.toLocaleDateString(undefined, options)
 }
 
-function confirmDelete(label: string) {
-  return window.confirm(`Delete "${label}"? This cannot be undone.`)
+function confirmAction(confirm: ReturnType<typeof useConfirmation>, title: string, message: string, action: () => void, confirmLabel = "Delete") {
+  void confirm({ title, message, confirmLabel }).then((accepted) => {
+    if (accepted) action()
+  })
 }
 
 function createDefaultPlanTime() {
@@ -131,6 +138,7 @@ function TaskRows({ tasks, onToggle, onDelete, emptyText }: {
   onDelete?: (id: string) => void
   emptyText: string
 }) {
+  const confirm = useConfirmation()
   if (tasks.length === 0) return <p className="empty-state">{emptyText}</p>
 
   return (
@@ -150,15 +158,16 @@ function TaskRows({ tasks, onToggle, onDelete, emptyText }: {
             <strong>{task.title}</strong>
             <span>{task.subject} <i /> Due {formatDate(task.dueDate, { month: "short", day: "numeric", year: "numeric" })}</span>
           </span>
-          {onDelete && <button className="quiet-button danger-button" type="button" onClick={() => { if (confirmDelete(task.title)) onDelete(task.id) }} aria-label={`Delete ${task.title}`}>Delete</button>}
+          {onDelete && <button className="quiet-button danger-button" type="button" onClick={() => confirmAction(confirm, "Delete this task?", `“${task.title}” will be removed from your tasks.`, () => onDelete(task.id))} aria-label={`Delete ${task.title}`}>Delete</button>}
         </li>
       ))}
     </ul>
   )
 }
 
-function Overview({ data, actions, onNavigate }: {
+function Overview({ data, notes, actions, onNavigate }: {
   data: ReturnType<typeof useStudyData>["data"]
+  notes: MarkdownNote[]
   actions: ReturnType<typeof useStudyData>["actions"]
   onNavigate: (page: Page) => void
 }) {
@@ -167,7 +176,7 @@ function Overview({ data, actions, onNavigate }: {
   const todayTasks = data.tasks.filter((task) => task.dueDate === today)
   const completedCount = data.tasks.filter((task) => task.completed).length
   const nextPlanItem = data.plan.find((item) => new Date(item.startsAt).getTime() >= currentTime)
-  const latestNote = [...data.notes].sort((left, right) => right.updatedAt - left.updatedAt)[0]
+  const latestNote = [...notes].sort((left, right) => right.updatedAt - left.updatedAt)[0]
   const activity = weeklyActivity(data.logs, data.timer, currentTime)
   const studySeconds = activity.reduce((total, day) => total + day.seconds, 0)
   const timer = data.timer
@@ -196,8 +205,8 @@ function Overview({ data, actions, onNavigate }: {
           </div>
           <div className="course-row">
             <div className="course-symbol">{timer.subject.slice(0, 1).toUpperCase() || "S"}</div>
-            <div className="course-details"><strong>{timer.subject || "Choose a subject"}</strong><span>{timer.isRunning ? "Session in progress" : `${timer.durationMinutes} minute session`}</span></div>
-            <span className="course-percent">{formatTimer(timer.remainingSeconds)}</span>
+            <div className="course-details"><strong>{timer.subject || "Choose a subject"}</strong><span>{timer.isRunning ? "Session in progress" : timer.remainingSeconds === 0 ? "Session complete" : `${timer.durationMinutes} minute session`}</span></div>
+            <span className="course-percent">{timer.remainingSeconds === 0 ? "Done" : formatTimer(timer.remainingSeconds)}</span>
           </div>
           <div className="progress-track" role="progressbar" aria-label="Focus session progress" aria-valuenow={Math.round(timerProgress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${timerProgress}%` }} /></div>
           <div className="focus-footer">
@@ -235,7 +244,7 @@ function Overview({ data, actions, onNavigate }: {
         </article>
 
         <article className="panel note-summary">
-          <div className="panel-heading"><div><span className="section-kicker">YOUR NOTES</span><h2>{data.notes.length} saved {data.notes.length === 1 ? "note" : "notes"}</h2></div><span className="panel-icon"><Icon name="notes" /></span></div>
+          <div className="panel-heading"><div><span className="section-kicker">YOUR NOTES</span><h2>{notes.length} saved {notes.length === 1 ? "note" : "notes"}</h2></div><span className="panel-icon"><Icon name="notes" /></span></div>
           <p className="note-preview">{latestNote ? latestNote.title : "Keep the ideas you want to remember in one place."}</p>
           <button className="text-button" type="button" onClick={() => onNavigate("notes")}>{latestNote ? "Open notes" : "Write your first note"} <Icon name="arrow" /></button>
         </article>
@@ -298,6 +307,7 @@ function TimerPage({ timer, logs, onConfigure, onStart, onPause, onReset, onDele
   onReset: () => void
   onDeleteLog: (id: string) => void
 }) {
+  const confirm = useConfirmation()
   const progress = Math.min(100, Math.max(0, ((timer.durationMinutes * 60 - timer.remainingSeconds) / (timer.durationMinutes * 60)) * 100))
   const completed = timer.remainingSeconds === 0
   const hasProgress = timer.remainingSeconds < timer.durationMinutes * 60
@@ -319,7 +329,10 @@ function TimerPage({ timer, logs, onConfigure, onStart, onPause, onReset, onDele
           <div className="progress-track timer-progress" role="progressbar" aria-label="Focus timer progress" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div>
           <div className="timer-controls">
             <button className="primary-button timer-main-button" onClick={timer.isRunning ? onPause : startOrRestart} type="button">{timer.isRunning ? "Pause" : completed ? "Start next session" : hasProgress ? "Resume" : "Start focus session"}</button>
-            <button className="quiet-button" onClick={() => { if (hasProgress && !completed && !window.confirm("Cancel this session? Its active study time will not be saved.")) return; onReset() }} type="button">{completed ? "Reset timer" : hasProgress ? "Cancel session" : "Reset"}</button>
+            <button className="quiet-button" onClick={() => {
+              if (hasProgress && !completed) confirmAction(confirm, "Cancel this focus session?", "The active segment will be discarded. Previously saved focus time will remain in your history.", onReset, "Cancel session")
+              else onReset()
+            }} type="button">{completed ? "Reset timer" : hasProgress ? "Cancel session" : "Reset"}</button>
           </div>
           <p className="timer-persistence"><span className="status-dot" /> {completed ? "This session is complete and saved in your history." : "Your timer is saved on this device and continues if you change sections."}</p>
         </section>
@@ -334,86 +347,114 @@ function TimerPage({ timer, logs, onConfigure, onStart, onPause, onReset, onDele
       </div>
       <section className="panel session-history">
         <div className="panel-heading"><div><span className="section-kicker">YOUR FOCUS HISTORY</span><h2>Completed sessions <span className="inline-count">{logs.length}</span></h2></div></div>
-        {logs.length === 0 ? <p className="empty-state">Completed focus sessions will appear here.</p> : <div className="record-list">{[...logs].sort((left, right) => right.startedAt - left.startedAt).map((log) => <article className="session-row" key={log.id}><div className="session-row-copy"><strong>{log.topic || "Focused study"}</strong><span>{log.subject} <i /> {new Date(log.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span></div><span className="session-duration">{formatDuration(log.durationSeconds)}</span><button className="quiet-button danger-button" onClick={() => { if (window.confirm(`Delete this ${formatDuration(log.durationSeconds)} focus session? Study-time totals will be updated.`)) onDeleteLog(log.id) }} type="button">Delete</button></article>)}</div>}
+        {logs.length === 0 ? <p className="empty-state">Completed focus sessions will appear here.</p> : <div className="record-list">{[...logs].sort((left, right) => right.startedAt - left.startedAt).map((log) => <article className="session-row" key={log.id}><div className="session-row-copy"><strong>{log.topic || "Focused study"}</strong><span>{log.subject} <i /> {new Date(log.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span></div><span className="session-duration">{formatDuration(log.durationSeconds)}</span><button className="quiet-button danger-button" onClick={() => confirmAction(confirm, "Delete this focus session?", `${formatDuration(log.durationSeconds)} will be removed from your study-time history.`, () => onDeleteLog(log.id))} type="button">Delete</button></article>)}</div>}
       </section>
     </>
   )
 }
 
-function NotesPage({ notes, onSave, onDelete }: {
-  notes: StudyNote[]
-  onSave: (note: StudyNote) => void
-  onDelete: (id: string) => void
+function NotesPage({ notes, isLoading, error, onSave, onDelete }: {
+  notes: MarkdownNote[]
+  isLoading: boolean
+  error: string | null
+  onSave: (note: MarkdownNote) => Promise<MarkdownNote | null>
+  onDelete: (note: MarkdownNote) => Promise<boolean>
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(() => notes[0]?.id ?? null)
-  const [title, setTitle] = useState(() => notes[0]?.title ?? "")
-  const [subject, setSubject] = useState(() => notes[0]?.subject ?? "General")
-  const [content, setContent] = useState(() => notes[0]?.content ?? "")
-  const [isSticky, setIsSticky] = useState(() => Boolean(notes[0]?.isSticky))
+  const confirm = useConfirmation()
+  const initialized = useRef(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [title, setTitle] = useState("")
+  const [subject, setSubject] = useState("General")
+  const [content, setContent] = useState("")
   const [search, setSearch] = useState("")
   const [isDirty, setIsDirty] = useState(false)
+  const [preview, setPreview] = useState(false)
   const selectedNote = notes.find((note) => note.id === selectedId) ?? null
   const filteredNotes = [...notes]
     .filter((note) => `${note.title} ${note.subject} ${note.content}`.toLowerCase().includes(search.trim().toLowerCase()))
     .sort((left, right) => right.updatedAt - left.updatedAt)
+
+  useEffect(() => {
+    if (isLoading || initialized.current) return
+    initialized.current = true
+    if (notes[0]) loadNote(notes[0])
+  }, [isLoading, notes])
 
   function clearEditor() {
     setSelectedId(null)
     setTitle("")
     setSubject("General")
     setContent("")
-    setIsSticky(false)
     setIsDirty(false)
+    setPreview(false)
   }
 
-  function createNote() {
-    if (isDirty && !window.confirm("Discard these unsaved note changes?")) return
-    clearEditor()
-  }
-
-  function loadNote(note: StudyNote) {
+  function loadNote(note: MarkdownNote) {
     setSelectedId(note.id)
     setTitle(note.title)
     setSubject(note.subject)
     setContent(note.content)
-    setIsSticky(Boolean(note.isSticky))
     setIsDirty(false)
+    setPreview(false)
   }
 
-  function selectNote(note: StudyNote) {
-    if (isDirty && !window.confirm("Discard these unsaved note changes?")) return
-    loadNote(note)
+  function createNote() {
+    void (async () => {
+      if (isDirty && !await confirm({ title: "Discard unsaved changes?", message: "Your edits to this note have not been saved.", confirmLabel: "Discard changes" })) return
+      clearEditor()
+    })()
   }
 
-  function submitNote(event: FormEvent<HTMLFormElement>) {
+  function selectNote(note: MarkdownNote) {
+    void (async () => {
+      if (isDirty && !await confirm({ title: "Discard unsaved changes?", message: "Your edits to this note have not been saved.", confirmLabel: "Discard changes" })) return
+      loadNote(note)
+    })()
+  }
+
+  async function submitNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const cleanTitle = title.trim()
-    const cleanSubject = subject.trim()
-    const cleanContent = content.trim()
-    if (!cleanTitle || !cleanSubject || !cleanContent) return
-    const id = selectedId ?? createId()
-    onSave({ id, title: cleanTitle, subject: cleanSubject, content: cleanContent, updatedAt: Date.now(), isSticky })
-    setSelectedId(id)
-    setIsDirty(false)
+    const cleanSubject = subject.trim() || "General"
+    if (!cleanTitle) return
+    const saved = await onSave({
+      id: selectedId ?? createId(),
+      title: cleanTitle,
+      subject: cleanSubject,
+      content,
+      createdAt: selectedNote?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      fileName: selectedNote?.fileName ?? "",
+    })
+    if (saved) loadNote(saved)
+  }
+
+  function deleteSelectedNote() {
+    if (!selectedNote) return
+    void (async () => {
+      const confirmed = await confirm({ title: "Delete this Markdown note?", message: `“${selectedNote.title}” will be removed from your StudySpace notes folder.` })
+      if (confirmed && await onDelete(selectedNote)) clearEditor()
+    })()
   }
 
   return (
     <>
-      <PageHeading kicker="IDEAS WORTH KEEPING" title="Notes" subtitle="Capture the useful things you learn along the way." action={<button className="primary-button" onClick={createNote} type="button">New note</button>} />
+      <PageHeading kicker="IDEAS WORTH KEEPING" title="Notes" subtitle="Write in Markdown and keep your notes on this device." action={<button className="primary-button" disabled={isLoading} onClick={createNote} type="button">New note</button>} />
       <div className="management-layout notes-layout">
         <section className="panel notes-library">
-          <div className="panel-heading"><div><span className="section-kicker">YOUR COLLECTION</span><h2>Saved notes <span className="inline-count">{notes.length}</span></h2></div></div>
+          <div className="panel-heading"><div><span className="section-kicker">YOUR FILES</span><h2>Notes <span className="inline-count">{notes.length}</span></h2></div></div>
           <label className="field notes-search"><span>Search notes</span><input onChange={(event) => setSearch(event.target.value)} placeholder="Title, subject, or text" type="search" value={search} /></label>
-          {notes.length === 0 ? <p className="empty-state">No notes yet. Start with something you want to remember.</p> : filteredNotes.length === 0 ? <p className="empty-state">No notes match that search.</p> : <div className="note-library-list">{filteredNotes.map((note) => <button aria-current={selectedId === note.id ? "true" : undefined} className={`note-list-item${selectedId === note.id ? " is-selected" : ""}${note.isSticky ? " is-sticky" : ""}`} key={note.id} onClick={() => selectNote(note)} type="button"><span className="note-list-meta"><span>{note.subject}</span>{note.isSticky && <span className="sticky-label">Sticky</span>}</span><strong>{note.title}</strong><span className="note-list-excerpt">{note.content}</span><time>{new Date(note.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></button>)}</div>}
+          {isLoading ? <p className="empty-state">Loading your Markdown notes...</p> : notes.length === 0 ? <p className="empty-state">No notes yet. Create a note to start your local Markdown library.</p> : filteredNotes.length === 0 ? <p className="empty-state">No notes match that search.</p> : <div className="note-library-list">{filteredNotes.map((note) => <button aria-current={selectedId === note.id ? "true" : undefined} className={`note-list-item${selectedId === note.id ? " is-selected" : ""}`} key={note.id} onClick={() => selectNote(note)} type="button"><span className="note-list-meta"><span>{note.subject}</span><span>.md</span></span><strong>{note.title}</strong><span className="note-list-excerpt">{note.content || "No content yet"}</span><time>{new Date(note.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></button>)}</div>}
         </section>
         <section className="panel note-editor-panel">
-          <div className="panel-heading"><div><span className="section-kicker">{selectedNote ? "EDITING NOTE" : "NEW NOTE"}</span><h2>{selectedNote ? selectedNote.title : "Write a note"}</h2></div>{selectedNote && <button className="quiet-button danger-button" onClick={() => { if (confirmDelete(selectedNote.title)) { onDelete(selectedNote.id); clearEditor() } }} type="button">Delete note</button>}</div>
-          {selectedNote || selectedId === null ? <form className="data-form" onSubmit={submitNote}>
+          <div className="panel-heading"><div><span className="section-kicker">{selectedNote ? "MARKDOWN FILE" : "NEW NOTE"}</span><h2>{selectedNote ? selectedNote.title : "Write a note"}</h2></div>{selectedNote && <button className="quiet-button danger-button" onClick={deleteSelectedNote} type="button">Delete note</button>}</div>
+          {error && <p className="storage-warning" role="alert">Could not save your notes: {error}</p>}
+          {isLoading ? <p className="empty-state">Opening your notes folder...</p> : selectedNote || selectedId === null ? <form className="data-form" onSubmit={submitNote}>
             <label className="field"><span>Title</span><input maxLength={100} onChange={(event) => { setTitle(event.target.value); setIsDirty(true) }} placeholder="A clear, memorable title" required value={title} /></label>
-            <label className="field"><span>Subject</span><input maxLength={40} onChange={(event) => { setSubject(event.target.value); setIsDirty(true) }} placeholder="e.g. Biology" required value={subject} /></label>
-            <label className="field"><span>Your note</span><textarea className="note-content-input" maxLength={4000} onChange={(event) => { setContent(event.target.value); setIsDirty(true) }} placeholder="Write down the key ideas..." required rows={12} value={content} /></label>
-            <label className="field note-presentation"><span>Presentation</span><select onChange={(event) => { setIsSticky(event.target.value === "sticky"); setIsDirty(true) }} value={isSticky ? "sticky" : "normal"}><option value="normal">Normal note</option><option value="sticky">Sticky note</option></select><small>Sticky notes use a compact highlight in your collection.</small></label>
-            <div className="form-actions"><button className="primary-button form-submit" type="submit">{selectedNote ? "Save changes" : "Save note"}</button>{selectedNote && <button className="quiet-button" onClick={() => loadNote(selectedNote)} type="button">Discard changes</button>}</div>
+            <label className="field"><span>Subject</span><input maxLength={40} onChange={(event) => { setSubject(event.target.value); setIsDirty(true) }} placeholder="e.g. Biology" value={subject} /></label>
+            <div className="note-mode-row"><div className="filter-tabs" aria-label="Note view"><button aria-pressed={!preview} className={!preview ? "is-selected" : ""} onClick={() => setPreview(false)} type="button">Write</button><button aria-pressed={preview} className={preview ? "is-selected" : ""} onClick={() => setPreview(true)} type="button">Preview</button></div><span className="note-file-name">{selectedNote?.fileName ?? "New Markdown note"}</span></div>
+            {preview ? <div className="markdown-preview">{content ? <Suspense fallback={<p className="empty-state">Rendering preview...</p>}><ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown></Suspense> : <p className="empty-state">Your Markdown preview will appear here.</p>}</div> : <label className="field"><span>Markdown</span><textarea className="note-content-input" maxLength={20000} onChange={(event) => { setContent(event.target.value); setIsDirty(true) }} placeholder={"# Topic\n\nWrite Markdown here...\n\n- [ ] Review this later"} rows={16} value={content} /></label>}
+            <div className="note-save-row"><span>{selectedNote ? `Modified ${new Date(selectedNote.updatedAt).toLocaleString()}` : "Markdown is saved locally when you save this note."}</span><div className="form-actions"><button className="primary-button form-submit" type="submit">{selectedNote ? "Save changes" : "Save note"}</button>{selectedNote && isDirty && <button className="quiet-button" onClick={() => loadNote(selectedNote)} type="button">Discard changes</button>}</div></div>
           </form> : <p className="empty-state">Choose a note to edit, or create a new one.</p>}
         </section>
       </div>
@@ -439,6 +480,7 @@ function FlashcardsPage({ decks, onAddDeck, onDeleteDeck, onRenameDeck, onAddCar
   onEditCard: (deckId: string, card: Flashcard) => void
   onDeleteCard: (deckId: string, cardId: string) => void
 }) {
+  const confirm = useConfirmation()
   const [selectedDeckId, setSelectedDeckId] = useState<string | null>(() => decks[0]?.id ?? null)
   const [newDeckName, setNewDeckName] = useState("")
   const [deckName, setDeckName] = useState(() => decks[0]?.name ?? "")
@@ -532,7 +574,7 @@ function FlashcardsPage({ decks, onAddDeck, onDeleteDeck, onRenameDeck, onAddCar
         <section className="panel deck-library">
           <div className="panel-heading"><div><span className="section-kicker">YOUR DECKS</span><h2>Study sets <span className="inline-count">{decks.length}</span></h2></div></div>
           <form className="deck-create-form" onSubmit={submitDeck}><label className="field"><span>New deck name</span><input maxLength={80} onChange={(event) => setNewDeckName(event.target.value)} placeholder="e.g. Biology exam" required value={newDeckName} /></label><button className="primary-button" type="submit">Create deck</button></form>
-          {decks.length === 0 ? <p className="empty-state">Your decks will appear here. Create one to get started.</p> : <div className="deck-list">{decks.map((deck) => <div className={`deck-list-row${selectedDeckId === deck.id ? " is-selected" : ""}`} key={deck.id}><button aria-current={selectedDeckId === deck.id ? "true" : undefined} className="deck-select" onClick={() => selectDeck(deck)} type="button"><strong>{deck.name}</strong><span>{deck.cards.length} {deck.cards.length === 1 ? "card" : "cards"}</span></button><button aria-label={`Delete ${deck.name}`} className="quiet-button danger-button" onClick={() => { if (confirmDelete(deck.name)) { onDeleteDeck(deck.id); if (selectedDeckId === deck.id) { setSelectedDeckId(null); setDeckName(""); setIsStudying(false); setIsFinished(false) } } }} type="button">Delete</button></div>)}</div>}
+          {decks.length === 0 ? <p className="empty-state">Your decks will appear here. Create one to get started.</p> : <div className="deck-list">{decks.map((deck) => <div className={`deck-list-row${selectedDeckId === deck.id ? " is-selected" : ""}`} key={deck.id}><button aria-current={selectedDeckId === deck.id ? "true" : undefined} className="deck-select" onClick={() => selectDeck(deck)} type="button"><strong>{deck.name}</strong><span>{deck.cards.length} {deck.cards.length === 1 ? "card" : "cards"}</span></button><button aria-label={`Delete ${deck.name}`} className="quiet-button danger-button" onClick={() => confirmAction(confirm, "Delete this flashcard deck?", `“${deck.name}” and its ${deck.cards.length} ${deck.cards.length === 1 ? "card" : "cards"} will be removed.`, () => { onDeleteDeck(deck.id); if (selectedDeckId === deck.id) { setSelectedDeckId(null); setDeckName(""); setIsStudying(false); setIsFinished(false) } })} type="button">Delete</button></div>)}</div>}
         </section>
         <section className="panel deck-detail">
           {!selectedDeck ? <><div className="panel-heading"><div><span className="section-kicker">READY WHEN YOU ARE</span><h2>Choose a deck</h2></div></div><p className="empty-state">Select a study set or create a new deck to add your first card.</p></> : <>
@@ -541,7 +583,7 @@ function FlashcardsPage({ decks, onAddDeck, onDeleteDeck, onRenameDeck, onAddCar
               <form className="deck-rename-form" onSubmit={renameSelectedDeck}><label className="field"><span>Deck name</span><input maxLength={80} onChange={(event) => setDeckName(event.target.value)} required value={deckName} /></label><button className="quiet-button" type="submit">Rename</button></form>
               <div className="study-start-row"><label className="field"><span>Card order</span><select onChange={(event) => setOrderMode(event.target.value as "original" | "shuffled")} value={orderMode}><option value="original">Original order</option><option value="shuffled">Shuffled</option></select></label><button className="primary-button" disabled={selectedDeck.cards.length === 0} onClick={() => beginStudy()} type="button">Study deck</button></div>
               <form className="data-form card-editor-form" onSubmit={submitCard}><div className="panel-heading"><div><span className="section-kicker">{editingCardId ? "EDIT CARD" : "ADD TO THIS DECK"}</span><h3>{editingCardId ? "Update flashcard" : "New flashcard"}</h3></div></div><label className="field"><span>Front / question</span><textarea maxLength={1000} onChange={(event) => setQuestion(event.target.value)} placeholder="What do you want to remember?" required rows={3} value={question} /></label><label className="field"><span>Back / answer</span><textarea maxLength={2000} onChange={(event) => setAnswer(event.target.value)} placeholder="Write the answer or explanation..." required rows={3} value={answer} /></label><div className="form-actions"><button className="primary-button" type="submit">{editingCardId ? "Save card" : "Add card"}</button>{editingCardId && <button className="quiet-button" onClick={resetCardForm} type="button">Cancel edit</button>}</div></form>
-              {selectedDeck.cards.length === 0 ? <p className="empty-state">This deck is empty. Add a question and answer above.</p> : <div className="flashcard-list">{selectedDeck.cards.map((card, index) => <article className="flashcard-row" key={card.id}><span className="flashcard-number">{index + 1}</span><div className="flashcard-copy"><strong>{card.question}</strong><span>{card.answer}</span></div><div className="flashcard-actions"><button className="quiet-button" onClick={() => editCard(card)} type="button">Edit</button><button className="quiet-button danger-button" onClick={() => { if (confirmDelete("this flashcard")) onDeleteCard(selectedDeck.id, card.id) }} type="button">Delete</button></div></article>)}</div>}
+              {selectedDeck.cards.length === 0 ? <p className="empty-state">This deck is empty. Add a question and answer above.</p> : <div className="flashcard-list">{selectedDeck.cards.map((card, index) => <article className="flashcard-row" key={card.id}><span className="flashcard-number">{index + 1}</span><div className="flashcard-copy"><strong>{card.question}</strong><span>{card.answer}</span></div><div className="flashcard-actions"><button className="quiet-button" onClick={() => editCard(card)} type="button">Edit</button><button className="quiet-button danger-button" onClick={() => confirmAction(confirm, "Delete this flashcard?", `“${card.question}” will be removed from this deck.`, () => onDeleteCard(selectedDeck.id, card.id))} type="button">Delete</button></div></article>)}</div>}
             </>}
             {isStudying && (isFinished ? <div className="study-complete"><span className="section-kicker">DECK COMPLETE</span><h3>That’s the set.</h3><p>You reviewed {orderedCards.length} {orderedCards.length === 1 ? "card" : "cards"}.</p><div className="form-actions"><button className="primary-button" onClick={() => beginStudy(studyOrder)} type="button">Review again</button><button className="quiet-button" onClick={() => setIsStudying(false)} type="button">Back to deck</button></div></div> : currentCard ? <div className="study-session"><div className="study-progress-line"><span>{studyIndex + 1} / {orderedCards.length}</span><button className="quiet-button" onClick={() => setIsStudying(false)} type="button">Exit study</button></div><button aria-label={showAnswer ? "Show question" : "Reveal answer"} aria-pressed={showAnswer} className={`study-flashcard${showAnswer ? " is-revealed" : ""}`} onClick={() => setShowAnswer((revealed) => !revealed)} type="button"><span className="section-kicker">{showAnswer ? "ANSWER" : "QUESTION"}</span><span className="study-card-copy">{showAnswer ? currentCard.answer : currentCard.question}</span><span className="study-card-hint">{showAnswer ? "Show question" : "Reveal answer"}</span></button><div className="study-navigation"><button className="quiet-button" disabled={studyIndex === 0} onClick={() => { setStudyIndex((index) => Math.max(0, index - 1)); setShowAnswer(false) }} type="button">Previous</button><button className="primary-button" onClick={advanceStudy} type="button">{studyIndex === orderedCards.length - 1 ? "Finish deck" : "Next card"}</button></div></div> : <p className="empty-state">No cards remain in this study order. Start again to refresh the deck.</p>)}
           </>}
@@ -557,6 +599,7 @@ function StudyPlanPage({ plan, onAdd, onDelete, onStart }: {
   onDelete: (id: string) => void
   onStart: (item: PlannedSession) => void
 }) {
+  const confirm = useConfirmation()
   const [title, setTitle] = useState("")
   const [subject, setSubject] = useState("Physics")
   const [startsAt, setStartsAt] = useState(createDefaultPlanTime)
@@ -589,7 +632,7 @@ function StudyPlanPage({ plan, onAdd, onDelete, onStart }: {
         </section>
         <section className="panel list-panel">
           <div className="panel-heading"><div><span className="section-kicker">UPCOMING</span><h2>Planned sessions <span className="inline-count">{plan.length}</span></h2></div></div>
-          {sortedPlan.length === 0 ? <p className="empty-state">Your schedule is clear. Add a session to plan your next study block.</p> : <div className="record-list">{sortedPlan.map((item) => <article className="record-card plan-card" key={item.id}><div className="record-topline"><span className="record-subject">{item.subject}</span><time>{new Date(item.startsAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} <i /> {item.durationMinutes} min</p><div className="record-actions"><button className="quiet-button accent-button" onClick={() => onStart(item)} type="button">Start session</button><button className="quiet-button danger-button" onClick={() => { if (confirmDelete(item.title)) onDelete(item.id) }} type="button">Remove</button></div></article>)}</div>}
+          {sortedPlan.length === 0 ? <p className="empty-state">Your schedule is clear. Add a session to plan your next study block.</p> : <div className="record-list">{sortedPlan.map((item) => <article className="record-card plan-card" key={item.id}><div className="record-topline"><span className="record-subject">{item.subject}</span><time>{new Date(item.startsAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} <i /> {item.durationMinutes} min</p><div className="record-actions"><button className="quiet-button accent-button" onClick={() => onStart(item)} type="button">Start session</button><button className="quiet-button danger-button" onClick={() => confirmAction(confirm, "Remove this planned session?", `“${item.title}” will be removed from your study plan.`, () => onDelete(item.id))} type="button">Remove</button></div></article>)}</div>}
         </section>
       </div>
     </>
@@ -599,6 +642,7 @@ function StudyPlanPage({ plan, onAdd, onDelete, onStart }: {
 function App() {
   const { data, actions, storageError } = useStudyData()
   const [activePage, setActivePage] = useState<Page>("overview")
+  const markdownNotes = useMarkdownNotes(data.notes, actions.clearLegacyNotes)
 
   function startPlannedSession(item: PlannedSession) {
     actions.configureTimer(item.subject, item.title, item.durationMinutes)
@@ -616,15 +660,15 @@ function App() {
         <nav className="navigation" aria-label="Main navigation">
           {navigation.map((item) => <button className={`nav-item${activePage === item.page ? " is-active" : ""}`} key={item.page} onClick={() => setActivePage(item.page)} type="button" aria-current={activePage === item.page ? "page" : undefined}><Icon name={item.icon} /><span>{item.label}</span></button>)}
         </nav>
-        <div className="sidebar-bottom"><div className="streak-mark">S</div><div><strong>{data.tasks.length} tasks</strong><span>{data.notes.length} notes saved locally</span></div></div>
+        <div className="sidebar-bottom"><div className="streak-mark">S</div><div><strong>{data.tasks.length} tasks</strong><span>{markdownNotes.notes.length} notes saved locally</span><small className="app-build-info">v{__STUDYSPACE_VERSION__} · {__STUDYSPACE_REVISION__}</small></div></div>
       </aside>
 
       <main className="main-content" id="overview">
         {storageError && <div className="storage-warning" role="alert">Browser storage is unavailable. This device cannot keep an offline copy of your data.</div>}
-        {activePage === "overview" && <Overview data={data} actions={actions} onNavigate={setActivePage} />}
+        {activePage === "overview" && <Overview data={data} notes={markdownNotes.notes} actions={actions} onNavigate={setActivePage} />}
         {activePage === "tasks" && <TasksPage tasks={data.tasks} onAdd={actions.addTask} onToggle={actions.toggleTask} onDelete={actions.deleteTask} />}
         {activePage === "timer" && <TimerPage timer={data.timer} logs={data.logs} onConfigure={actions.configureTimer} onStart={actions.startTimer} onPause={actions.pauseTimer} onReset={actions.resetTimer} onDeleteLog={actions.deleteLog} />}
-        {activePage === "notes" && <NotesPage notes={data.notes} onSave={actions.saveNote} onDelete={actions.deleteNote} />}
+        {activePage === "notes" && <NotesPage notes={markdownNotes.notes} isLoading={markdownNotes.isLoading} error={markdownNotes.error} onSave={markdownNotes.save} onDelete={markdownNotes.remove} />}
         {activePage === "flashcards" && <FlashcardsPage decks={data.flashcardDecks} onAddDeck={actions.addDeck} onDeleteDeck={actions.deleteDeck} onRenameDeck={actions.renameDeck} onAddCard={actions.addCardToDeck} onEditCard={actions.editCardInDeck} onDeleteCard={actions.deleteCardFromDeck} />}
         {activePage === "plan" && <StudyPlanPage plan={data.plan} onAdd={actions.addPlanItem} onDelete={actions.deletePlanItem} onStart={startPlannedSession} />}
       </main>

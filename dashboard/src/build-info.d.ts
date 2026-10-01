@@ -1,0 +1,2 @@
+declare const __STUDYSPACE_VERSION__: string
+declare const __STUDYSPACE_REVISION__: string

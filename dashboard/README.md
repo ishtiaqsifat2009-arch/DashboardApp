@@ -1,11 +1,11 @@
 # Studyspace
 
-A local-first study workspace built with React, TypeScript, and Vite. Tasks, searchable notes, flashcard decks, study-plan sessions, timer settings and progress, and study history are stored on this device in browser `localStorage`. Notes can use a compact sticky presentation; flashcard decks can be studied in original or shuffled order. The app makes no network requests and works offline after it has loaded once.
+A local-first study workspace built with React, TypeScript, Vite, and Tauri. Tasks, flashcard decks, study-plan sessions, timer state, and focus history are stored locally. Desktop notes are Markdown files in Tauri's app-local data directory; browser development uses a localStorage-backed Markdown fallback.
 
 ## Run locally
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
@@ -16,6 +16,7 @@ No accounts, environment variables, backend, or internet connection are required
 ```sh
 npm run lint
 npm run build
+npm test
 ```
 
 ## Desktop app
@@ -27,19 +28,21 @@ npm run tauri dev
 npm run tauri build
 ```
 
-The desktop app continues using the localStorage adapter through the WebView's persistent app origin. No account, network connection, backend, or SQLite database is used.
+The desktop app uses Tauri filesystem commands for Markdown notes and localStorage for other study data. Notes are stored under `AppLocalDataDir/notes`, typically `~/Library/Application Support/com.dashboardapp.studyspace/notes` on macOS and `%LOCALAPPDATA%\com.dashboardapp.studyspace\notes` on Windows. No account, network connection, backend, cloud sync, or SQLite database is used.
 
 On Apple Silicon, the production build creates:
 
-- `src-tauri/target/release/bundle/macos/Studyspace.app`
-- `src-tauri/target/release/bundle/dmg/Studyspace_0.1.0_aarch64.dmg`
+```text
+src-tauri/target/release/bundle/macos/Studyspace.app
+src-tauri/target/release/bundle/dmg/Studyspace_0.1.2_aarch64.dmg
+```
 
 ## Desktop downloads
 
-Pushing to `main` builds Windows and macOS installers. Download the `Studyspace-Windows-Installers` and `Studyspace-macOS-Installer` artifacts from that GitHub Actions run. Pushing a version tag such as `v0.1.1` builds both platforms and attaches the `.exe`, `.msi`, and `.dmg` files to one GitHub Release. The installers are currently unsigned, so Windows SmartScreen or macOS Gatekeeper may show their standard warnings.
+Pushing to `main` builds Windows and macOS installers. Download the `Studyspace-Windows-Installers` and `Studyspace-macOS-Installer` artifacts from that GitHub Actions run. Pushing a version tag such as `v0.1.2` builds both platforms and attaches the `.exe`, `.msi`, and `.dmg` files to one GitHub Release. The installers are currently unsigned, so Windows SmartScreen or macOS Gatekeeper may show their standard warnings.
 
 ## Data model and desktop path
 
-The React UI uses the study-data hook; `studyData.ts` owns the typed entities and reducer logic; `storage.ts` implements the `StudyDataStorage` boundary. The current adapter stores one serialized `StudyData` document in localStorage and contains the legacy-key migrations and storage-error handling. The entities (`StudyTask`, `StudyNote`, `PlannedSession`, `StudyLog`, `FocusTimer`, `FlashcardDeck`, and `Flashcard`) use stable IDs and local primitive data. Existing notes without a sticky presentation flag continue to load as normal notes, and older saved documents without flashcard decks default to an empty deck list. When adding SQLite, replace the adapter with a SQLite implementation and handle its asynchronous startup/save calls inside the study-data layer, without changing UI workflows.
+The React UI uses the study-data hook; `studyData.ts` owns shared task, timer, plan, flashcard, and history reducer logic. `storage.ts` persists that document in localStorage. `markdownNotes.ts` and `useMarkdownNotes.ts` load and save Markdown files through Tauri, with a localStorage fallback for browser development. Old note objects are imported into files and backed up under `studyspace:legacy-notes-backup:v1` before the active legacy field is cleared.
 
 SQLite is not included yet. It does not require Supabase or a custom server.

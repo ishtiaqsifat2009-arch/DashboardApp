@@ -16,7 +16,6 @@ export type StudyNote = {
   subject: string
   content: string
   updatedAt: number
-  isSticky?: boolean
 }
 
 export type PlannedSession = {
@@ -106,8 +105,7 @@ export type StudyDataAction =
   | { type: "task/add"; task: StudyTask }
   | { type: "task/toggle"; id: string }
   | { type: "task/delete"; id: string }
-  | { type: "note/save"; note: StudyNote }
-  | { type: "note/delete"; id: string }
+  | { type: "note/legacyClear" }
   | { type: "plan/add"; item: PlannedSession }
   | { type: "plan/delete"; id: string }
   | { type: "log/delete"; id: string }
@@ -145,12 +143,8 @@ export function reducer(data: StudyData, action: StudyDataAction): StudyData {
       return { ...data, tasks: data.tasks.map((task) => task.id === action.id ? { ...task, completed: !task.completed } : task) }
     case "task/delete":
       return { ...data, tasks: data.tasks.filter((task) => task.id !== action.id) }
-    case "note/save": {
-      const exists = data.notes.some((note) => note.id === action.note.id)
-      return { ...data, notes: exists ? data.notes.map((note) => note.id === action.note.id ? action.note : note) : [action.note, ...data.notes] }
-    }
-    case "note/delete":
-      return { ...data, notes: data.notes.filter((note) => note.id !== action.id) }
+    case "note/legacyClear":
+      return data.notes.length === 0 ? data : { ...data, notes: [] }
     case "plan/add":
       return { ...data, plan: [...data.plan, action.item].sort((a, b) => a.startsAt.localeCompare(b.startsAt)) }
     case "plan/delete":
@@ -275,8 +269,7 @@ export function useStudyData() {
     addTask: (task: Omit<StudyTask, "id" | "createdAt" | "completed">) => dispatch({ type: "task/add", task: { ...task, id: createId(), createdAt: Date.now(), completed: false } }),
     toggleTask: (id: string) => dispatch({ type: "task/toggle", id }),
     deleteTask: (id: string) => dispatch({ type: "task/delete", id }),
-    saveNote: (note: StudyNote) => dispatch({ type: "note/save", note }),
-    deleteNote: (id: string) => dispatch({ type: "note/delete", id }),
+    clearLegacyNotes: () => dispatch({ type: "note/legacyClear" }),
     addPlanItem: (item: Omit<PlannedSession, "id">) => dispatch({ type: "plan/add", item: { ...item, id: createId() } }),
     deletePlanItem: (id: string) => dispatch({ type: "plan/delete", id }),
     deleteLog: (id: string) => dispatch({ type: "log/delete", id }),

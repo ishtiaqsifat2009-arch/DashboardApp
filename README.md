@@ -1,239 +1,109 @@
-# Studyspace
+# StudySpace
 
-**Studyspace** is a local-first study organizer built with **React, TypeScript, Vite, and Tauri**.
+StudySpace is a local-first study organizer for managing coursework, focus sessions, flashcards, and notes without accounts or cloud services.
 
-It is designed to be a simple, distraction-free workspace for managing schoolwork and study sessions without requiring an account, server, or internet connection.
+## Features
 
-### Features
-
-* **Overview** — See study time, completed tasks, streaks, and upcoming work at a glance.
-* **Tasks** — Create, complete, edit, and delete tasks.
-* **Focus Timer** — Run focused study sessions and keep a record of your study time.
-* **Study Plan** — Organize upcoming study sessions.
-* **Flashcards** — Create and study decks in original or shuffled order.
-* **Notes** — Search, edit, and organize notes with an optional sticky-note presentation.
-* **Session history** — Cancel active timers or remove saved focus sessions and their study time.
-* **Local-first storage** — Your data stays on your device.
-* **Offline support** — No account or network connection is required.
-* **Desktop app** — The same React application can run as a native desktop application through Tauri.
-
----
+- **Dashboard:** See weekly focus time, completed tasks, upcoming study plans, and recent notes.
+- **Tasks:** Create, complete, and delete tasks organized by subject and due date.
+- **Focus timer:** Start, pause, resume, reset, cancel, and complete a timed study session.
+- **Study sessions:** Plan sessions and start them directly in the focus timer.
+- **Session history:** Review completed focus segments and delete records; study-time totals derive from the remaining history.
+- **Flashcards:** Create and edit decks/cards, reveal answers, navigate through a deck, and review in original or shuffled order.
+- **Markdown notes:** Browse, search, create, rename, edit, preview, and delete Markdown notes.
+- **Local-first storage:** Data remains on the device. The app has no accounts, remote API, or cloud synchronization.
+- **Desktop app:** Tauri builds the shared React application for Windows and macOS. Other Tauri desktop targets are configured but are not built by CI.
 
 ## Tech Stack
 
-* **React** — UI
-* **TypeScript** — Application logic and type safety
-* **Vite** — Development and frontend build tooling
-* **Tauri v2** — Desktop application shell
-* **localStorage** — Current local persistence layer
+- React 19, TypeScript 6, and Vite 8
+- Tauri 2 and Rust
+- localStorage for tasks, study plans, timer state, flashcard decks, and session history
+- App-local Markdown files for desktop notes; localStorage-backed Markdown records in browser development
+- `react-markdown`, `remark-gfm`, and `yaml` for Markdown preview and frontmatter
+- Node's built-in test runner and Rust unit tests
 
-There is currently **no backend, authentication, cloud database, or SQLite dependency**.
+There is no database server, authentication service, or cloud storage dependency.
 
----
+## Getting Started
 
-## Run Locally
+Install Node.js and npm. From the `dashboard` directory:
 
-From the `dashboard` directory:
-
-```bash
-npm install
+```sh
+npm ci
 npm run dev
 ```
 
-The browser version works without:
+The browser development version saves study data to that browser origin's localStorage. It does not require environment variables, a backend, or an internet connection after dependencies are installed.
 
-* an account
-* environment variables
-* a backend
-* an internet connection
+## Development
 
-Data is automatically saved to the browser's local storage and restored when the application is reopened.
+Run these commands from `dashboard`:
 
-Different browser profiles maintain separate local data.
-
-### Data migration
-
-Studyspace automatically migrates data from the previous:
-
-```text
-studyspace:data:v1
-```
-
-storage key, as well as a single unambiguous cache from the previous account-based format.
-
-Migrated data is stored under:
-
-```text
-studyspace:data:v1:local
-```
-
-If multiple legacy account caches are detected, Studyspace leaves them untouched rather than potentially combining different users' data.
-
----
-
-## Development Checks
-
-Run the linter:
-
-```bash
+```sh
+npm run dev
+npm test
 npm run lint
-```
-
-Build the production frontend:
-
-```bash
 npm run build
+cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
----
+To run the Tauri desktop shell during development:
 
-## Desktop Application
-
-Studyspace can also be packaged as a desktop application using **Tauri v2**.
-
-The desktop application uses the same React/Vite frontend rather than maintaining a separate UI.
-
-### Requirements
-
-For macOS development, install:
-
-* Node.js
-* Rust stable
-* Xcode Command Line Tools
-
-### Run the desktop app
-
-```bash
+```sh
 npm run tauri dev
 ```
 
-### Build the desktop app
+Desktop development requires Rust stable and the platform's Tauri prerequisites. macOS requires Xcode Command Line Tools. Windows requires the Microsoft C++ Build Tools and Tauri's WebView2 prerequisites.
 
-```bash
+## Building
+
+Build the desktop application for the current host platform from `dashboard`:
+
+```sh
 npm run tauri build
 ```
 
-On Apple Silicon, the production build currently generates:
+GitHub Actions builds Windows NSIS/MSI installers and macOS app/DMG packages from pushes to `main`; these are downloadable workflow artifacts. Pushing a version tag such as `v0.1.2` also attaches the Windows installers and macOS DMG to a GitHub Release. Current installers are unsigned.
+
+## Project Structure
 
 ```text
-src-tauri/target/release/bundle/macos/Studyspace.app
-src-tauri/target/release/bundle/dmg/Studyspace_0.1.0_aarch64.dmg
+dashboard/src/                 React UI, study state, persistence adapters, tests
+dashboard/src-tauri/src/       Rust Tauri commands and desktop entry point
+dashboard/src-tauri/icons/     Native platform app icons
+.github/workflows/             Windows and macOS desktop build workflow
 ```
 
-The desktop application continues to use the local storage adapter through Tauri's WebView. It does not require an account, server, network connection, or SQLite database.
+`studyData.ts` owns shared study state, reducer transitions, and timer lifecycle. `storage.ts` persists that shared document to localStorage and migrates legacy keys. `markdownNotes.ts` and `useMarkdownNotes.ts` parse and manage Markdown notes. Tauri commands in `src-tauri/src/lib.rs` confine desktop note files to the app-local notes directory.
 
----
+## Notes
 
-## Downloads
+Desktop notes are individual `.md` files under Tauri's `AppLocalDataDir/notes`. For the current app identifier `com.dashboardapp.studyspace`, the usual locations are:
 
-GitHub Actions can build desktop installers for Windows and macOS.
+- macOS: `~/Library/Application Support/com.dashboardapp.studyspace/notes`
+- Windows: `%LOCALAPPDATA%\com.dashboardapp.studyspace\notes`
+- Linux: `$XDG_DATA_HOME/com.dashboardapp.studyspace/notes` (usually `~/.local/share/com.dashboardapp.studyspace/notes`)
 
-Pushing to `main` creates platform-specific build artifacts that can be downloaded from the corresponding GitHub Actions workflow run.
+Each file has YAML frontmatter for its stable ID, title, subject, creation time, and modified time, followed by normal Markdown content. Files without frontmatter are opened using the filename as the title. The editor supports direct Markdown entry and a GitHub-Flavored Markdown preview.
 
-Creating a version tag such as:
+On first desktop launch after the Markdown upgrade, old note objects are imported into `.md` files. Before the active legacy notes field is cleared, a copy is retained in localStorage under `studyspace:legacy-notes-backup:v1`. Other StudySpace data is not cleared or migrated away. The browser version stores Markdown-file records in localStorage and does not write to the user's filesystem.
 
-```bash
-git tag v0.1.1
-git push origin v0.1.1
-```
+## Data & Persistence
 
-builds the Windows and macOS installers and attaches them to a GitHub Release.
+Tasks, plans, timer state, flashcard decks, and focus-session history remain in the `studyspace:data:v1:local` localStorage document. Deleting a focus-history entry removes that record, so derived study-time totals update. Desktop Markdown notes use app-local files. All persistence is local to the device; there is no cloud synchronization.
 
-Current installers are unsigned, so Windows SmartScreen or macOS Gatekeeper may display their standard security warnings.
+## Cross-platform
 
----
+The same React UI and study-data reducer run in the Tauri desktop app. Windows and macOS are the platforms built by the repository's CI workflow. Linux can use Tauri's configured desktop target but is not currently built by CI. Destructive confirmations are rendered by React rather than relying on platform WebView JavaScript dialogs.
 
-## Architecture
+## Contributing
 
-Studyspace uses a small separation between the application state and its persistence layer:
+1. Install dependencies with `npm ci` from `dashboard`.
+2. Keep changes focused and preserve the local-first storage boundaries.
+3. Run `npm test`, `npm run lint`, `npm run build`, and `cargo test --manifest-path src-tauri/Cargo.toml --lib` before submitting.
+4. For desktop changes, run `npm run tauri build` on the target platform or use the existing CI workflow.
 
-```text
-React UI
-   ↓
-StudyData
-   ↓
-Storage Interface
-   ↓
-localStorage
-```
+## License
 
-### Application layer
-
-`studyData.ts` contains the typed study entities, reducer logic, timer behavior, and UI-facing actions.
-
-The main entities are:
-
-* `StudyTask`
-* `StudyNote`
-* `PlannedSession`
-* `StudyLog`
-* `FocusTimer`
-
-These entities use stable IDs and simple primitive fields, keeping the data model suitable for future database storage.
-
-### Storage layer
-
-`storage.ts` implements the `StudyDataStorage` interface.
-
-The current adapter stores the complete `StudyData` document locally and handles:
-
-* loading saved data
-* saving changes
-* storage failures
-* legacy data migration
-
-The React UI does not need to know how the data is persisted.
-
----
-
-## Future Storage
-
-The current storage layer is intentionally designed so that local persistence can eventually move from:
-
-```text
-localStorage
-```
-
-to:
-
-```text
-SQLite
-```
-
-without replacing the application's UI or study workflows.
-
-The intended future architecture is:
-
-```text
-React + TypeScript
-        ↓
-     Tauri
-        ↓
-  StudyData layer
-        ↓
-  SQLite adapter
-        ↓
-    Local database
-```
-
-SQLite is **not currently implemented**.
-
-There is also no planned requirement for Supabase or a custom server for the core application. Cloud synchronization could be added later as an optional feature if cross-device functionality becomes necessary.
-
----
-
-## Project Status
-
-Studyspace is currently a functional local-first study application with:
-
-* task management
-* notes
-* study planning
-* focus timing
-* study history
-* persistent local data
-* browser support
-* Tauri desktop support
-* Windows/macOS build automation
-
-The next major architectural step is replacing the localStorage adapter with a local SQLite database while keeping the existing React application and user workflows intact.
+No license has been specified in this repository.
