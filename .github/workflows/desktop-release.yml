@@ -58,9 +58,7 @@ jobs:
           if (-not (Test-Path dashboard/src-tauri/icons/icon.ico)) { throw "Windows application icon is missing" }
           if (-not (Test-Path dashboard/src-tauri/target/release/studyspace.exe)) { throw "Tauri Windows executable is missing" }
           if (-not (Get-ChildItem dashboard/src-tauri/target/release/bundle/nsis/*.exe)) { throw "NSIS installer was not generated" }
-          if (-not (Get-ChildItem dashboard/src-tauri/target/release/bundle/nsis/*.zip)) { throw "NSIS updater archive was not generated" }
           if (-not (Get-ChildItem dashboard/src-tauri/target/release/bundle/msi/*.msi)) { throw "MSI installer was not generated" }
-          if (-not (Get-ChildItem dashboard/src-tauri/target/release/bundle/msi/*.zip)) { throw "MSI updater archive was not generated" }
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v5
@@ -68,9 +66,7 @@ jobs:
           name: Studyspace-Windows-Installers
           path: |
             dashboard/src-tauri/target/release/bundle/nsis/*.exe
-            dashboard/src-tauri/target/release/bundle/nsis/*.zip
             dashboard/src-tauri/target/release/bundle/msi/*.msi
-            dashboard/src-tauri/target/release/bundle/msi/*.zip
           if-no-files-found: error
 
   build-macos:
@@ -144,6 +140,5 @@ jobs:
           files: |
             release-assets/windows/**/*.exe
             release-assets/windows/**/*.msi
-            release-assets/windows/**/*.zip
             release-assets/macos/*.dmg
             release-assets/macos/*.tar.gz
